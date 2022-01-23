@@ -24,12 +24,65 @@ global.FILE_ATTRIBUTE_NORMAL = 0x00000080,\
 global.FILE_ATTRIBUTE_TEMPORARY = 0x00000100;");
 #endif
 
+#include <dirent.h>
+
 #ifndef _WIN32
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <dirent.h>
 #include <unistd.h>
+#else
+#include <direct.h>
+#include <sys/types.h>
+#include <sys/utime.h>
+#define lstat stat
+#define rmdir _rmdir
+
+int truncate(const char* path, off_t length)
+{
+	std::vector<char> imageFileData;
+	SDL_RWops* io = SDL_RWFromFile(path, "rb");
+	if (io == nullptr)
+	{
+		return 1;
+	}
+
+	// Seek to 0 bytes from the end of the file
+	Sint64 fileLength = SDL_RWseek(io, 0, RW_SEEK_END);
+	SDL_RWseek(io, 0, RW_SEEK_SET);
+	imageFileData.resize(fileLength);
+	SDL_RWread(io, imageFileData.data(), fileLength, 1);
+	SDL_RWclose(io);
+
+	imageFileData.resize(length, '\0');
+
+	return 0;
+}
+
+int utimes(const char* filename, const timeval time[2])
+{
+	HANDLE handle = CreateFileA(filename, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+	if (NULL == handle)
+	{
+		return 1;
+	}
+
+	FILE_BASIC_INFO fileInfo;
+	GetFileInformationByHandleEx(handle, FileBasicInfo, &fileInfo, sizeof(FILE_BASIC_INFO));
+	
+	FILE_BASIC_INFO newFileInfo;
+	newFileInfo.CreationTime = fileInfo.CreationTime;
+	newFileInfo.LastAccessTime.QuadPart = time[2].tv_usec;
+	newFileInfo.LastWriteTime.QuadPart = time[2].tv_usec;
+	newFileInfo.ChangeTime.QuadPart = time[2].tv_usec;
+	newFileInfo.FileAttributes = GetFileAttributesA(filename);
+	SetFileInformationByHandle(handle, FileBasicInfo, &newFileInfo, sizeof(newFileInfo));
+
+	CloseHandle(handle);
+
+	return 0;
+}
 #endif
 
 #ifdef __vita__
